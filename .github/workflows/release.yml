@@ -1,0 +1,131 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.1.0)"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  UV_INDEX_URL: https://pypi.org/simple
+  PYTHON_VERSION: "3.14"
+
+jobs:
+  build:
+    name: Build distributions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Check version matches tag
+        run: |
+          TAG="${{ github.event.inputs.tag || github.ref_name }}"
+          VERSION=$(grep -m1 '^version' pyproject.toml | cut -d'"' -f2)
+          echo "tag=$TAG project version=$VERSION"
+          if [ "$TAG" != "v$VERSION" ]; then
+            echo "::error::Tag $TAG does not match project version $VERSION"
+            exit 1
+          fi
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/*
+
+  binaries:
+    name: Binary (${{ matrix.os }})
+    needs: build
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            asset: find-out-runtime-linux-x64
+            ext: ""
+          - os: windows-latest
+            asset: find-out-runtime-windows-x64
+            ext: ".exe"
+          - os: macos-latest
+            asset: find-out-runtime-macos-arm64
+            ext: ""
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Sync dependencies
+        run: uv sync --no-dev
+
+      - name: Build standalone executable
+        run: >
+          uv run --with pyinstaller pyinstaller
+          --onefile
+          --name find-out-runtime
+          --collect-all azure.identity
+          --collect-all azure.mgmt.databricks
+          --collect-all databricks
+          --collect-all rich
+          --collect-all typer
+          src/find_out_runtime/app.py
+
+      - name: Rename executable
+        shell: bash
+        run: mv "dist/find-out-runtime${{ matrix.ext }}" "dist/${{ matrix.asset }}${{ matrix.ext }}"
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.asset }}
+          path: dist/${{ matrix.asset }}${{ matrix.ext }}
+
+  release:
+    name: Publish GitHub Release
+    needs: [build, binaries]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts
+        run: |
+          mkdir -p release
+          find artifacts -type f -exec cp {} release/ \;
+          ls -l release
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          name: ${{ github.event.inputs.tag || github.ref_name }}
+          generate_release_notes: true
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+          files: release/*
