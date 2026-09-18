@@ -1,0 +1,27 @@
+[project]
+name = "find-out-runtime"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+authors = [
+    { name = "HongWei Guo", email = "hongweig@163.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "azure-identity>=1.25.3",
+    "azure-mgmt-databricks>=3.0.0",
+    "databricks-sdk>=0.138.0",
+    "rich>=15.0.0",
+    "typer>=0.27.2",
+]
+
+[project.scripts]
+find-out-runtime = "find_out_runtime.app:main"
+
+[[tool.uv.index]]
+url = "https://packagefeedproxy.microsoft.io/pypi/simple/"
+default = true
+
+[build-system]
+requires = ["uv_build>=0.12.15,<0.13.0"]
+build-backend = "uv_build"
