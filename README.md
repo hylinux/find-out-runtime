@@ -1,2 +1,5 @@
 # find-out-runtime
-help people find out all runtime according it's version
+
+Usage:
+
+find-out-runtime  --cloud china|global --subscription "{your subscription}" --runtime 15.4
